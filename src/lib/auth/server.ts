@@ -103,27 +103,55 @@ const LOCAL_DEV_ORIGINS: string[] = [
   "http://127.0.0.1:8080",
   "http://[::1]:8080",
 ];
-const baseURL = explicitBaseURL ?? {
-  // Include loopback hosts so dynamic baseURL resolves for local email/password
-  // (not only the preview wildcard).
-  allowedHosts: [...previewAllowedHosts, "localhost", "127.0.0.1", "[::1]"],
-  // `auto` → trust both http:// and https:// expansions of allowedHosts
-  // (preview is https; local dev is http).
+
+function hostFromUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    return new URL(value).host;
+  } catch {
+    return value.replace(/^https?:\/\//, "").replace(/\/.*$/, "") || undefined;
+  }
+}
+
+// The public site (Vercel alias, preview deployment, custom domain) is not the
+// sandbox host. A fixed BETTER_AUTH_URL — or none — makes the browser Origin
+// fail as "Invalid origin" and makes Google/X reject the callback. Trust the
+// host this process is actually serving, plus the preview and loopback hosts.
+const deploymentHosts = [
+  env("VERCEL_PROJECT_PRODUCTION_URL"),
+  env("VERCEL_URL"),
+  env("VERCEL_BRANCH_URL"),
+  hostFromUrl(explicitBaseURL),
+]
+  .map((host) => host?.replace(/^https?:\/\//, "").replace(/\/.*$/, ""))
+  .filter((host): host is string => Boolean(host));
+
+const allowedHosts: string[] = [
+  ...new Set([
+    ...previewAllowedHosts,
+    "*.vercel.app",
+    ...deploymentHosts,
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+  ]),
+];
+
+// Always resolve the origin from the request so OAuth's redirect_uri is the
+// site the visitor opened (Chrome, Safari, Firefox), not a stale fallback.
+const baseURL = {
+  allowedHosts,
   protocol: "auto" as const,
-  fallback: "http://localhost:8080",
+  fallback: explicitBaseURL ?? "http://localhost:8080",
 };
 
-// Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
-// Missing entries here surface as FORBIDDEN "Invalid origin".
-const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
-  : [
-      // Host wildcards (matched against Origin's host)
-      ...previewAllowedHosts,
-      // Full-origin wildcards (matched against Origin)
-      ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
-      ...LOCAL_DEV_ORIGINS,
-    ];
+const trustedOrigins: string[] = [
+  ...allowedHosts.flatMap((host) =>
+    host.includes("://") ? [host] : [`https://${host}`, `http://${host}`],
+  ),
+  ...LOCAL_DEV_ORIGINS,
+  ...(explicitBaseURL ? [explicitBaseURL] : []),
+];
 
 const databaseUrl = env("DATABASE_URL");
 

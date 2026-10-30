@@ -1,3 +1,7 @@
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { pendingMigrations } from "../../scripts/migration-plan.mjs";
 
 /** Which database backend is active. */
@@ -105,13 +109,52 @@ function createNeonSql(): Promise<Sql> {
   return globalRef.__pgSqlPromise__;
 }
 
+async function pgliteAssetOptions(): Promise<{
+  pgliteWasmModule?: WebAssembly.Module;
+  initdbWasmModule?: WebAssembly.Module;
+  fsBundle?: Blob;
+}> {
+  const candidates = new Set<string>();
+  candidates.add(join(process.cwd(), "node_modules/@electric-sql/pglite/dist"));
+  try {
+    candidates.add(dirname(fileURLToPath(import.meta.url)));
+  } catch {
+    /* bundled URL may not be a file path */
+  }
+  try {
+    const require = createRequire(import.meta.url);
+    candidates.add(join(dirname(require.resolve("@electric-sql/pglite/package.json")), "dist"));
+  } catch {
+    /* package not resolvable from the bundle */
+  }
+  for (const dist of candidates) {
+    try {
+      const [wasm, data, initdb] = await Promise.all([
+        readFile(join(dist, "pglite.wasm")),
+        readFile(join(dist, "pglite.data")),
+        readFile(join(dist, "initdb.wasm")),
+      ]);
+      const [pgliteWasmModule, initdbWasmModule] = await Promise.all([
+        WebAssembly.compile(wasm),
+        WebAssembly.compile(initdb),
+      ]);
+      return { pgliteWasmModule, initdbWasmModule, fsBundle: new Blob([data]) };
+    } catch {
+      /* try the next location */
+    }
+  }
+  return {};
+}
+
 async function createPgliteSql(): Promise<Sql> {
   // Embedded Postgres, imported on demand so it never loads on the Neon path.
   // One in-memory instance per process, shared across HMR module instances, so
   // data survives source edits (it resets on dev-server restart).
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
+    const assets = await pgliteAssetOptions();
     const pg = new PGlite({
+      ...assets,
       parsers: {
         [OID_INT8]: Number,
         [OID_DATE]: identity,

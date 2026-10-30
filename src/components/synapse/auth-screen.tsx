@@ -46,7 +46,16 @@ function authMessage(error: { message?: string; code?: string } | null | undefin
   if (message.includes("password") || code.includes("PASSWORD")) {
     return "La contraseña necesita al menos 8 caracteres.";
   }
-  if (message.includes("invalid") || code.includes("INVALID")) return "Usuario o contraseña incorrectos.";
+  if (
+    code.includes("INVALID_EMAIL_OR_PASSWORD") ||
+    message.includes("invalid email or password") ||
+    message.includes("invalid credentials")
+  ) {
+    return "Usuario o contraseña incorrectos.";
+  }
+  if (code.includes("INVALID_EMAIL") || message.includes("invalid email")) {
+    return "Ese usuario no es válido.";
+  }
   return "No se pudo completar. Revisa los datos e inténtalo de nuevo.";
 }
 
@@ -109,7 +118,6 @@ function BirthFields({
           ))}
         </select>
       </div>
-      <p className="mt-2 text-sm text-mist">No se muestra a otros jugadores.</p>
     </div>
   );
 }
@@ -308,7 +316,18 @@ export function AuthScreen() {
                 key={provider.providerId}
                 type="button"
                 className="h-11 rounded-xl border border-line bg-navy text-sm font-semibold text-frost hover:border-ice"
-                onClick={() => signIn(provider.providerId, { callbackURL: "/" })}
+                onClick={() => {
+                  setError(null);
+                  const back = `${window.location.pathname}${window.location.search}` || "/";
+                  void signIn(provider.providerId, { callbackURL: back }).catch((err: unknown) => {
+                    const message = err instanceof Error ? err.message : "";
+                    if (/pop-?up|bloque/i.test(message)) {
+                      setError("Tu navegador bloqueó la ventana. Permite ventanas emergentes e inténtalo otra vez.");
+                      return;
+                    }
+                    setError("No se pudo abrir el inicio con " + provider.label + ". Inténtalo de nuevo.");
+                  });
+                }}
               >
                 Continuar con {provider.label}
               </button>
@@ -355,9 +374,7 @@ export function ClaimScreen({ onDone }: { onDone: (username: string) => void }) 
       <form className="w-full max-w-md space-y-4" onSubmit={onSubmit}>
         <Wordmark />
         <h1 className="text-balance text-3xl font-semibold tracking-tight">Elige tu usuario</h1>
-        <p className="text-pretty text-sm text-mist">
-          Así te buscan tus amigos. La fecha de nacimiento se queda privada.
-        </p>
+        <p className="text-pretty text-sm text-mist">Así te buscan tus amigos.</p>
         <label className="block">
           <span className={labelClass}>Usuario</span>
           <input
