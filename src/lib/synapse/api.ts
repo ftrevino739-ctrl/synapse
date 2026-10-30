@@ -2,7 +2,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { cleanUsername, parseBirthDate, sanitizeBlocks, type Block } from "@/lib/synapse/model";
 
-type ProfileRow = { username: string; birth_date: string };
+type ProfileRow = {
+  username: string;
+  birth_date: string;
+  avatar_url?: string | null;
+  look?: unknown;
+};
 type PlayerRow = { user_id: string; username: string };
 type RequestRow = { id: number; user_id: string; username: string; created_at: unknown };
 type ExperienceRow = {
@@ -24,10 +29,11 @@ type PairRow = { id: number; from_user_id: string; to_user_id: string; status: s
 export type PublicPlayer = {
   userId: string;
   username: string;
+  birthDate: string;
   relation: "none" | "friends" | "outgoing" | "incoming";
 };
 
-export type FriendCard = { userId: string; username: string };
+export type FriendCard = { userId: string; username: string; birthDate: string; avatarUrl: string | null };
 
 export type RequestCard = { id: number; userId: string; username: string; createdAt: string };
 
@@ -37,6 +43,8 @@ export type ChatLine = { id: number; fromMe: boolean; body: string; createdAt: s
 
 export type HomePayload = {
   username: string;
+  birthDate: string;
+  avatarUrl: string | null;
   experiences: ExperienceCard[];
   friends: FriendCard[];
   incoming: RequestCard[];
@@ -98,11 +106,28 @@ export const getMyProfile = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const sql = await db();
     const rows = await sql<ProfileRow>`
-      select username, birth_date from profiles where user_id = ${context.userId}
+      select username, birth_date, avatar_url, look from profiles where user_id = ${context.userId}
     `;
     const row = rows[0];
     if (!row) return null;
-    return { username: row.username, birthDate: String(row.birth_date).slice(0, 10) };
+    return {
+      username: row.username,
+      birthDate: String(row.birth_date).slice(0, 10),
+      avatarUrl: row.avatar_url ?? null,
+    };
+  });
+
+export const saveAvatar = createServerFn({ method: "POST" })
+  .validator((input: { avatarUrl: string }) => input)
+  .middleware([authMiddleware])
+  .handler(async ({ context, data }) => {
+    const avatarUrl = (data.avatarUrl ?? "").slice(0, 180000);
+    if (!avatarUrl.startsWith("data:image/")) {
+      return { ok: false as const, error: "Choose an image." };
+    }
+    const sql = await db();
+    await sql`update profiles set avatar_url = ${avatarUrl} where user_id = ${context.userId}`;
+    return { ok: true as const };
   });
 
 export const completeProfile = createServerFn({ method: "POST" })
@@ -116,10 +141,10 @@ export const completeProfile = createServerFn({ method: "POST" })
       ? parseBirthDate(Number(birthParts[1]), Number(birthParts[2]), Number(birthParts[3]))
       : null;
     if (!username) {
-      return { ok: false as const, error: "El usuario usa 3 a 20 letras, números o _." };
+      return { ok: false as const, error: "Usernames are 3 to 20 letters, numbers, or _." };
     }
     if (!parsed) {
-      return { ok: false as const, error: "La fecha de nacimiento no es válida." };
+      return { ok: false as const, error: "That birth date is not valid." };
     }
     const sql = await db();
     const mine = await sql<ProfileRow>`
@@ -137,7 +162,7 @@ export const completeProfile = createServerFn({ method: "POST" })
         select username, birth_date from profiles where user_id = ${context.userId}
       `;
       if (again[0]) return { ok: true as const, username: again[0].username };
-      return { ok: false as const, error: "Ese usuario ya está tomado." };
+      return { ok: false as const, error: "That username is taken." };
     }
     return { ok: true as const, username };
   });
@@ -148,7 +173,7 @@ export const getHome = createServerFn({ method: "GET" })
     const sql = await db();
     const me = context.userId;
     const profiles = await sql<ProfileRow>`
-      select username, birth_date from profiles where user_id = ${me}
+      select username, birth_date, avatar_url, look from profiles where user_id = ${me}
     `;
     if (!profiles[0]) return null;
     const [experiences, friends, incoming, outgoing] = await Promise.all([
@@ -159,8 +184,8 @@ export const getHome = createServerFn({ method: "GET" })
         order by updated_at desc
         limit 24
       `,
-      sql<PlayerRow>`
-        select p.user_id, p.username
+      sql<{ user_id: string; username: string; birth_date: string; avatar_url: string | null }>`
+        select p.user_id, p.username, p.birth_date::text, p.avatar_url
         from friend_requests f
         join profiles p
           on p.user_id = case when f.from_user_id = ${me} then f.to_user_id else f.from_user_id end
@@ -190,13 +215,20 @@ export const getHome = createServerFn({ method: "GET" })
     });
     return {
       username: profiles[0].username,
+      birthDate: String(profiles[0].birth_date).slice(0, 10),
+      avatarUrl: profiles[0].avatar_url ?? null,
       experiences: experiences.map((row) => ({
         id: Number(row.id),
         title: row.title,
         blockCount: Number(row.block_count),
         updatedAt: asIso(row.updated_at),
       })),
-      friends: friends.map((row) => ({ userId: row.user_id, username: row.username })),
+      friends: friends.map((row) => ({
+        userId: row.user_id,
+        username: row.username,
+        birthDate: String(row.birth_date).slice(0, 10),
+        avatarUrl: row.avatar_url,
+      })),
       incoming: incoming.map(card),
       outgoing: outgoing.map(card),
     };
@@ -210,8 +242,8 @@ export const searchPlayers = createServerFn({ method: "POST" })
     if (query.length < 2) return [];
     const sql = await db();
     const me = context.userId;
-    const rows = await sql<{ user_id: string; username: string; relation: string | null }>`
-      select p.user_id, p.username,
+    const rows = await sql<{ user_id: string; username: string; birth_date: string; relation: string | null }>`
+      select p.user_id, p.username, p.birth_date::text,
         case
           when f.status = 'accepted' then 'friends'
           when f.from_user_id = ${me} and f.status = 'pending' then 'outgoing'
@@ -229,6 +261,7 @@ export const searchPlayers = createServerFn({ method: "POST" })
     return rows.map((row) => ({
       userId: row.user_id,
       username: row.username,
+      birthDate: String(row.birth_date).slice(0, 10),
       relation:
         row.relation === "friends" || row.relation === "outgoing" || row.relation === "incoming"
           ? row.relation

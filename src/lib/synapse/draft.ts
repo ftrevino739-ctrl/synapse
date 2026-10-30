@@ -58,7 +58,7 @@ function allowed(block: Block): boolean {
 
 export const useStudio = create<StudioState>((set, get) => ({
   experienceId: null,
-  title: "Cabaña de hielo",
+  title: "New place",
   blocks: clone(STARTER_BLOCKS),
   script: STARTER_SCRIPT,
   past: [],
@@ -78,7 +78,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     const current = get().blocks;
     if (current.some((item) => sameCell(item, block.x, block.y, block.z))) return;
     if (current.length >= MAX_BLOCKS) {
-      set({ notice: "Llegaste al límite de bloques." });
+      set({ notice: "Block limit reached." });
       return;
     }
     set({

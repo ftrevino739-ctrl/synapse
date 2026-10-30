@@ -42,21 +42,21 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
 function authMessage(error: { message?: string; code?: string } | null | undefined): string {
   const code = (error?.code ?? "").toUpperCase();
   const message = (error?.message ?? "").toLowerCase();
-  if (code.includes("USER_ALREADY") || message.includes("exist")) return "Ese usuario ya existe.";
-  if (message.includes("password") || code.includes("PASSWORD")) {
-    return "La contraseña necesita al menos 8 caracteres.";
-  }
+  if (code.includes("USER_ALREADY") || message.includes("exist")) return "That username is taken.";
   if (
     code.includes("INVALID_EMAIL_OR_PASSWORD") ||
     message.includes("invalid email or password") ||
     message.includes("invalid credentials")
   ) {
-    return "Usuario o contraseña incorrectos.";
+    return "Wrong username or password.";
   }
-  if (code.includes("INVALID_EMAIL") || message.includes("invalid email")) {
-    return "Ese usuario no es válido.";
+  if (code.includes("PASSWORD_TOO_SHORT") || message.includes("too short") || message.includes("at least")) {
+    return "Use at least 8 characters.";
   }
-  return "No se pudo completar. Revisa los datos e inténtalo de nuevo.";
+  if (code.includes("INVALID_EMAIL") || (message.includes("invalid email") && !message.includes("password"))) {
+    return "That username is not valid.";
+  }
+  return "Could not finish. Check the fields and try again.";
 }
 
 function BirthFields({
@@ -79,10 +79,10 @@ function BirthFields({
   for (let value = thisYear; value >= 1920; value -= 1) years.push(value);
   return (
     <div>
-      <span className={labelClass}>Fecha de nacimiento</span>
+      <span className={labelClass}>Birth date</span>
       <div className="grid grid-cols-3 gap-2">
         <select
-          aria-label="Día"
+          aria-label="Day"
           className={fieldClass}
           value={day}
           onChange={(event) => onDay(Number(event.target.value))}
@@ -106,7 +106,7 @@ function BirthFields({
           ))}
         </select>
         <select
-          aria-label="Año"
+          aria-label="Year"
           className={fieldClass}
           value={year}
           onChange={(event) => onYear(Number(event.target.value))}
@@ -140,7 +140,7 @@ function PasswordField({
         autoComplete={autoComplete}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Contraseña"
+        placeholder="Password"
         required
         minLength={8}
       />
@@ -148,7 +148,7 @@ function PasswordField({
         type="button"
         className="absolute top-0 right-0 grid h-11 w-11 place-items-center text-mist"
         onClick={() => setVisible((current) => !current)}
-        aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
+        aria-label={visible ? "Hide password" : "Show password"}
       >
         {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
       </button>
@@ -179,11 +179,11 @@ export function AuthScreen() {
     setError(null);
     const cleaned = cleanUsername(username);
     if (!cleaned) {
-      setError("El usuario usa 3 a 20 letras, números o _.");
+      setError("Usernames are 3 to 20 letters, numbers, or _.");
       return;
     }
     if (password.length < 8) {
-      setError("La contraseña necesita al menos 8 caracteres.");
+      setError("Use at least 8 characters.");
       return;
     }
     setPending(true);
@@ -192,7 +192,7 @@ export function AuthScreen() {
       const birthDate = parseBirthDate(year, month, day);
       if (!birthDate) {
         setPending(false);
-        setError("Esa fecha de nacimiento no es válida.");
+        setError("That birth date is not valid.");
         return;
       }
       stageClaim({ username: cleaned, birthDate });
@@ -237,12 +237,8 @@ export function AuthScreen() {
           />
         </div>
         <div className="relative z-10 max-w-md">
-          <h1 className="text-balance text-4xl font-semibold tracking-tight text-frost">
-            Construye el mundo. Invita a tus amigos.
-          </h1>
-          <p className="mt-3 text-pretty text-base text-mist">
-            Bloques, código o una frase. Synapse arma el lugar y el chat se queda entre ustedes.
-          </p>
+          <h1 className="text-balance text-4xl font-semibold tracking-tight text-frost">Synapse</h1>
+          <p className="mt-3 text-pretty text-base text-mist">Sign in. Build a place. Play it.</p>
         </div>
       </section>
       <section className="flex flex-col justify-center px-5 py-8 sm:px-10">
@@ -252,8 +248,8 @@ export function AuthScreen() {
           </div>
           <div className="mb-6 grid grid-cols-2 rounded-xl bg-navy p-1">
             {([
-              ["login", "Iniciar sesión"],
-              ["signup", "Crear cuenta"],
+              ["login", "Log in"],
+              ["signup", "Sign up"],
             ] as const).map(([id, label]) => (
               <button
                 key={id}
@@ -272,7 +268,7 @@ export function AuthScreen() {
           </div>
           <form className="space-y-4" onSubmit={onSubmit}>
             <label className="block">
-              <span className={labelClass}>Usuario</span>
+              <span className={labelClass}>Username</span>
               <input
                 className={fieldClass}
                 autoComplete="username"
@@ -283,7 +279,7 @@ export function AuthScreen() {
               />
             </label>
             <label className="block">
-              <span className={labelClass}>Contraseña</span>
+              <span className={labelClass}>Password</span>
               <PasswordField
                 value={password}
                 onChange={setPassword}
@@ -302,12 +298,12 @@ export function AuthScreen() {
             ) : null}
             {error ? <p className="text-sm text-frost">{error}</p> : null}
             <button className={primaryClass} type="submit" disabled={pending}>
-              {pending ? "Un momento…" : mode === "login" ? "Entrar" : "Crear cuenta"}
+              {pending ? "One moment…" : mode === "login" ? "Log in" : "Sign up"}
             </button>
           </form>
           <div className="my-6 flex items-center gap-3 text-sm text-mist">
             <span className="h-px flex-1 bg-line" />
-            o continúa con
+            or continue with
             <span className="h-px flex-1 bg-line" />
           </div>
           <div className="grid gap-2">
@@ -322,14 +318,14 @@ export function AuthScreen() {
                   void signIn(provider.providerId, { callbackURL: back }).catch((err: unknown) => {
                     const message = err instanceof Error ? err.message : "";
                     if (/pop-?up|bloque/i.test(message)) {
-                      setError("Tu navegador bloqueó la ventana. Permite ventanas emergentes e inténtalo otra vez.");
+                      setError("Your browser blocked the window. Allow pop-ups and try again.");
                       return;
                     }
-                    setError("No se pudo abrir el inicio con " + provider.label + ". Inténtalo de nuevo.");
+                    setError("Could not open " + provider.label + ". Try again.");
                   });
                 }}
               >
-                Continuar con {provider.label}
+                Continue with {provider.label}
               </button>
             ))}
           </div>
@@ -352,11 +348,11 @@ export function ClaimScreen({ onDone }: { onDone: (username: string) => void }) 
     const cleaned = cleanUsername(username);
     const birthDate = parseBirthDate(year, month, day);
     if (!cleaned) {
-      setError("El usuario usa 3 a 20 letras, números o _.");
+      setError("Usernames are 3 to 20 letters, numbers, or _.");
       return;
     }
     if (!birthDate) {
-      setError("Esa fecha de nacimiento no es válida.");
+      setError("That birth date is not valid.");
       return;
     }
     setPending(true);
@@ -373,10 +369,10 @@ export function ClaimScreen({ onDone }: { onDone: (username: string) => void }) 
     <main className="grid min-h-dvh place-items-center bg-ink px-5">
       <form className="w-full max-w-md space-y-4" onSubmit={onSubmit}>
         <Wordmark />
-        <h1 className="text-balance text-3xl font-semibold tracking-tight">Elige tu usuario</h1>
-        <p className="text-pretty text-sm text-mist">Así te buscan tus amigos.</p>
+        <h1 className="text-balance text-3xl font-semibold tracking-tight">Pick a username</h1>
+        <p className="text-pretty text-sm text-mist">People will find you by this name. Your birth date shows on your profile.</p>
         <label className="block">
-          <span className={labelClass}>Usuario</span>
+          <span className={labelClass}>Username</span>
           <input
             className={fieldClass}
             autoComplete="username"
@@ -389,7 +385,7 @@ export function ClaimScreen({ onDone }: { onDone: (username: string) => void }) 
         <BirthFields year={year} month={month} day={day} onYear={setYear} onMonth={setMonth} onDay={setDay} />
         {error ? <p className="text-sm text-frost">{error}</p> : null}
         <button className={primaryClass} type="submit" disabled={pending}>
-          {pending ? "Guardando…" : "Entrar a Synapse"}
+          {pending ? "Saving…" : "Enter Synapse"}
         </button>
       </form>
     </main>

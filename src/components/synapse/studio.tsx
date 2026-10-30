@@ -1,30 +1,32 @@
-import { useState } from "react";
-import { Eraser, Redo2, Sparkles, Undo2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Eraser, Play, Redo2, Sparkles, Undo2 } from "lucide-react";
 import { draftWithAi, saveExperience } from "@/lib/synapse/api";
 import { useStudio } from "@/lib/synapse/draft";
-import { PALETTE, SCRIPT_HELP, compileScript } from "@/lib/synapse/model";
+import { SCRIPT_HELP, compileScript } from "@/lib/synapse/model";
+import { MATERIALS } from "@/lib/synapse/materials";
+import { TEMPLATES, buildTemplate } from "@/lib/synapse/templates";
+import { readLook } from "@/lib/synapse/look";
 import { Viewport } from "@/components/synapse/viewport";
-
-const chipClass = (id: string) =>
-  id === "ice"
-    ? "bg-ice"
-    : id === "glacier"
-      ? "bg-glacier"
-      : id === "frost"
-        ? "bg-frost"
-        : id === "sea"
-          ? "bg-deep"
-          : id === "navy"
-            ? "bg-navy"
-            : "bg-ink";
+import { PlayWorld } from "@/components/synapse/play-world";
 
 const fieldClass =
   "h-11 w-full rounded-xl border border-line bg-ink px-3 text-base text-frost outline-none placeholder:text-mist focus-visible:border-ice";
 
 export function Studio() {
   const studio = useStudio();
-  const [prompt, setPrompt] = useState("Una torre de hielo con una base oscura");
+  const [prompt, setPrompt] = useState("A turf pitch with white lines");
   const [busy, setBusy] = useState<"save" | "ai" | null>(null);
+  const [filter, setFilter] = useState("");
+  const [category, setCategory] = useState("All");
+  const [materialId, setMaterialId] = useState(MATERIALS[0].id);
+  const [playing, setPlaying] = useState(false);
+  const categories = useMemo(() => ["All", ...new Set(MATERIALS.map((item) => item.category))], []);
+  const shown = MATERIALS.filter((item) => {
+    if (category !== "All" && item.category !== category) return false;
+    if (!filter.trim()) return true;
+    return item.name.toLowerCase().includes(filter.trim().toLowerCase());
+  }).slice(0, 80);
+  const selected = MATERIALS.find((item) => item.id === materialId) ?? MATERIALS[0];
 
   function runScript() {
     const compiled = compileScript(studio.script);
@@ -33,7 +35,7 @@ export function Studio() {
       return;
     }
     studio.applyBlocks(compiled.blocks);
-    studio.setNotice(`${compiled.blocks.length} bloques.`);
+    studio.setNotice(`${compiled.blocks.length} blocks.`);
   }
 
   async function askAi() {
@@ -53,7 +55,7 @@ export function Studio() {
       return;
     }
     studio.applyBlocks(compiled.blocks, result.script);
-    studio.setNotice("Listo. Puedes seguir con bloques o editar el código.");
+    studio.setNotice("Ready. Keep editing if you want.");
   }
 
   async function save() {
@@ -72,7 +74,18 @@ export function Studio() {
       return;
     }
     studio.setExperienceId(result.id);
-    studio.setNotice("Juego guardado.");
+    studio.setNotice("Saved.");
+  }
+
+  if (playing) {
+    return (
+      <PlayWorld
+        blocks={studio.blocks}
+        look={readLook()}
+        mode="walk"
+        onExit={() => setPlaying(false)}
+      />
+    );
   }
 
   return (
@@ -82,7 +95,8 @@ export function Studio() {
           blocks={studio.blocks}
           interactive
           tool={studio.tool}
-          color={studio.color}
+          color={selected.hex}
+          materialId={selected.id}
           onPlace={studio.place}
           onErase={studio.erase}
         />
@@ -91,9 +105,9 @@ export function Studio() {
         <div className="flex gap-2">
           {(
             [
-              ["blocks", "Bloques"],
-              ["code", "Código"],
-              ["ai", "IA"],
+              ["blocks", "Blocks"],
+              ["code", "Code"],
+              ["ai", "Generate"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -109,7 +123,7 @@ export function Studio() {
           ))}
         </div>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-mist">Nombre del juego</span>
+          <span className="mb-1.5 block text-sm font-medium text-mist">Place name</span>
           <input
             className={fieldClass}
             value={studio.title}
@@ -119,23 +133,52 @@ export function Studio() {
         </label>
         {studio.mode === "blocks" ? (
           <div className="space-y-3">
-            <p className="text-sm text-mist">
-              Clic para poner. Clic derecho, o la goma, para quitar. Arrastra para mirar alrededor.
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {PALETTE.map((swatch) => (
+            <p className="text-sm text-mist">Click to place. Right-click or the eraser to remove. Drag to look around.</p>
+            <div className="flex flex-wrap gap-1">
+              {TEMPLATES.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="h-9 rounded-lg border border-line px-2 text-xs text-frost"
+                  onClick={() => studio.applyBlocks(buildTemplate(item.id))}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+            <input
+              className={fieldClass}
+              value={filter}
+              placeholder={`Search ${MATERIALS.length} materials`}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+            <div className="flex gap-1 overflow-x-auto">
+              {categories.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={`h-8 shrink-0 rounded-lg px-2 text-xs ${category === item ? "bg-ice text-ink" : "bg-navy text-mist"}`}
+                  onClick={() => setCategory(item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto">
+              {shown.map((swatch) => (
                 <button
                   key={swatch.id}
                   type="button"
-                  className={`flex h-11 items-center gap-2 rounded-xl border px-2 text-sm ${
-                    studio.color === swatch.hex && studio.tool === "place"
-                      ? "border-ice"
-                      : "border-line"
+                  className={`flex h-11 items-center gap-2 rounded-xl border px-2 text-left text-xs ${
+                    materialId === swatch.id ? "border-ice" : "border-line"
                   }`}
-                  onClick={() => studio.setColor(swatch.hex)}
+                  onClick={() => {
+                    setMaterialId(swatch.id);
+                    studio.setColor(swatch.hex);
+                  }}
                 >
-                  <span className={`size-4 rounded-sm border border-line ${chipClass(swatch.id)}`} />
-                  {swatch.label}
+                  <span className="size-4 shrink-0 rounded-sm border border-line" style={{ background: swatch.hex }} />
+                  <span className="truncate">{swatch.name}</span>
                 </button>
               ))}
             </div>
@@ -148,7 +191,7 @@ export function Studio() {
                 onClick={() => studio.setTool(studio.tool === "erase" ? "place" : "erase")}
               >
                 <Eraser className="size-4" />
-                Quitar
+                Erase
               </button>
               <button
                 type="button"
@@ -157,7 +200,7 @@ export function Studio() {
                 disabled={studio.past.length === 0}
               >
                 <Undo2 className="size-4" />
-                Deshacer
+                Undo
               </button>
             </div>
           </div>
@@ -177,15 +220,13 @@ export function Studio() {
               onClick={runScript}
             >
               <Redo2 className="size-4" />
-              Ejecutar script
+              Run script
             </button>
           </div>
         ) : null}
         {studio.mode === "ai" ? (
           <div className="space-y-3">
-            <p className="text-pretty text-sm text-mist">
-              Describe el lugar. Grok escribe el script, coloca los bloques y puedes seguir editándolo.
-            </p>
+            <p className="text-pretty text-sm text-mist">Describe the place. You can keep editing the blocks after.</p>
             <textarea
               className="h-32 w-full resize-y rounded-xl border border-line bg-ink p-3 text-sm text-frost outline-none focus-visible:border-ice"
               value={prompt}
@@ -199,7 +240,7 @@ export function Studio() {
               disabled={busy === "ai"}
             >
               <Sparkles className="size-4" />
-              {busy === "ai" ? "Construyendo…" : "Construir con IA"}
+              {busy === "ai" ? "Building…" : "Build from description"}
             </button>
           </div>
         ) : null}
@@ -210,9 +251,17 @@ export function Studio() {
           onClick={() => void save()}
           disabled={busy === "save"}
         >
-          {busy === "save" ? "Guardando…" : "Guardar juego"}
+          {busy === "save" ? "Saving…" : "Save"}
         </button>
-        <p className="text-xs text-mist">{studio.blocks.length} bloques en la escena.</p>
+        <button
+          type="button"
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-ice text-sm font-semibold text-ink"
+          onClick={() => setPlaying(true)}
+        >
+          <Play className="size-4" />
+          Playtest
+        </button>
+        <p className="text-xs text-mist">{studio.blocks.length} blocks in the scene.</p>
       </aside>
     </div>
   );

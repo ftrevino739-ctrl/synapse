@@ -38,6 +38,35 @@
   }
 }
 
+[data-theme="light"] {
+  --color-ink: #f4f7fb;
+  --color-navy: #ffffff;
+  --color-sea: #e7eef8;
+  --color-deep: #d5e4f5;
+  --color-line: #d3dfec;
+  --color-mist: #5d7390;
+  --color-frost: #122033;
+}
+
+[data-theme="glass"] {
+  --color-ink: transparent;
+  --color-navy: rgba(10, 18, 32, 0.45);
+  --color-sea: rgba(18, 32, 54, 0.4);
+  --color-line: rgba(255, 255, 255, 0.16);
+}
+
+[data-theme="glass"] body {
+  background:
+    radial-gradient(900px 420px at 0% 0%, rgba(126, 200, 255, 0.35), transparent 55%),
+    radial-gradient(700px 380px at 100% 10%, rgba(120, 70, 220, 0.28), transparent 50%),
+    #071018;
+}
+
+[data-theme="glass"] .bg-navy,
+[data-theme="glass"] .bg-ink {
+  backdrop-filter: blur(18px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

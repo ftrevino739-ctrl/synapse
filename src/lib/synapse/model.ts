@@ -20,12 +20,13 @@ export type Block = {
   y: number;
   z: number;
   color: string;
+  material?: string;
 };
 
-export const GRID_MIN = -12;
-export const GRID_MAX = 12;
-export const GRID_MAX_Y = 16;
-export const MAX_BLOCKS = 700;
+export const GRID_MIN = -48;
+export const GRID_MAX = 48;
+export const GRID_MAX_Y = 32;
+export const MAX_BLOCKS = 8000;
 
 export const SCRIPT_HELP = [
   "color hielo|glaciar|escarcha|profundo|marino|tinta",
@@ -132,7 +133,7 @@ export function compileScript(source: string): { blocks: Block[]; error: string 
       const n = ints(rest, 4);
       if (!n) return fail(lineNo, "floor necesita x z ancho fondo.");
       const [x, z, w, d] = n;
-      if (!inSpan(w, 1, 24) || !inSpan(d, 1, 24)) return fail(lineNo, "el piso es demasiado grande.");
+      if (!inSpan(w, 1, 80) || !inSpan(d, 1, 80)) return fail(lineNo, "That floor is too large.");
       for (let ix = 0; ix < w; ix += 1) {
         for (let iz = 0; iz < d; iz += 1) put(x + ix, 0, z + iz);
       }
@@ -222,13 +223,21 @@ export function sanitizeBlocks(input: unknown): Block[] {
     if (!inSpan(x ?? NaN, GRID_MIN, GRID_MAX) || !inSpan(z ?? NaN, GRID_MIN, GRID_MAX)) continue;
     if (!inSpan(y ?? NaN, 0, GRID_MAX_Y)) continue;
     const rawColor = candidate.color;
-    if (typeof rawColor !== "string" || !HEX_OK.has(rawColor.toLowerCase())) continue;
-    const color = PALETTE.find((swatch) => swatch.hex.toLowerCase() === rawColor.toLowerCase())?.hex;
-    if (!color) continue;
+    if (typeof rawColor !== "string" || !/^#[0-9a-f]{6}$/i.test(rawColor)) continue;
+    const material =
+      typeof candidate.material === "string" && candidate.material.length <= 40
+        ? candidate.material
+        : undefined;
     const key = `${x},${y},${z}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ x: x as number, y: y as number, z: z as number, color });
+    out.push({
+      x: x as number,
+      y: y as number,
+      z: z as number,
+      color: rawColor,
+      ...(material ? { material } : {}),
+    });
     if (out.length >= MAX_BLOCKS) break;
   }
   return out;
@@ -262,18 +271,18 @@ export function parseBirthDate(year: number, month: number, day: number): string
 }
 
 export const MONTHS = [
-  "Enero",
-  "Febrero",
-  "Marzo",
-  "Abril",
-  "Mayo",
-  "Junio",
-  "Julio",
-  "Agosto",
-  "Septiembre",
-  "Octubre",
-  "Noviembre",
-  "Diciembre",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ] as const;
 
 export function sameCell(a: Block, x: number, y: number, z: number): boolean {

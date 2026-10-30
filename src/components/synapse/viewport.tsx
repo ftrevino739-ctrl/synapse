@@ -2,22 +2,25 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Block } from "@/lib/synapse/model";
+import { materialById, paintMaterial } from "@/lib/synapse/materials";
 
 type ViewportProps = {
   blocks: Block[];
   interactive: boolean;
   tool: "place" | "erase";
   color: string;
+  materialId?: string;
   onPlace: (block: Block) => void;
   onErase: (x: number, y: number, z: number) => void;
 };
 
-export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }: ViewportProps) {
+export function Viewport({ blocks, interactive, tool, color, materialId, onPlace, onErase }: ViewportProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const blocksRef = useRef(blocks);
   const interactiveRef = useRef(interactive);
   const toolRef = useRef(tool);
   const colorRef = useRef(color);
+  const materialRef = useRef(materialId);
   const placeRef = useRef(onPlace);
   const eraseRef = useRef(onErase);
   const rebuildRef = useRef<() => void>(() => {});
@@ -26,6 +29,7 @@ export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }:
   interactiveRef.current = interactive;
   toolRef.current = tool;
   colorRef.current = color;
+  materialRef.current = materialId;
   placeRef.current = onPlace;
   eraseRef.current = onErase;
 
@@ -48,15 +52,15 @@ export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }:
     sun.position.set(10, 16, 8);
     scene.add(sun);
 
-    const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 200);
-    camera.position.set(14, 11, 14);
+    const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 400);
+    camera.position.set(22, 16, 22);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1.2, 0);
     controls.enableDamping = true;
     controls.maxPolarAngle = Math.PI / 2.05;
     controls.minDistance = 5;
-    controls.maxDistance = 42;
+    controls.maxDistance = 140;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     controls.autoRotate = !interactiveRef.current && !reduce;
     controls.autoRotateSpeed = 0.7;
@@ -66,12 +70,12 @@ export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }:
     }
 
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(36, 36),
-      new THREE.MeshStandardMaterial({ color: "#0b1a36", roughness: 1 }),
+      new THREE.PlaneGeometry(160, 160),
+      new THREE.MeshStandardMaterial({ color: "#0e1c33", roughness: 1 }),
     );
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
-    const grid = new THREE.GridHelper(24, 24, "#1e3a5f", "#132848");
+    const grid = new THREE.GridHelper(96, 96, "#1e3a5f", "#132848");
     grid.position.y = 0.01;
     scene.add(grid);
 
@@ -80,17 +84,32 @@ export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }:
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const materials = new Map<string, THREE.MeshStandardMaterial>();
 
+    const textures = new Map<string, THREE.CanvasTexture>();
     const rebuild = () => {
       meshes.clear();
       for (const block of blocksRef.current) {
-        let material = materials.get(block.color);
+        const key = block.material ?? block.color;
+        let material = materials.get(key);
         if (!material) {
+          const spec = materialById(block.material);
+          let map: THREE.CanvasTexture | undefined;
+          if (spec) {
+            map = textures.get(spec.id);
+            if (!map) {
+              map = new THREE.CanvasTexture(paintMaterial(spec));
+              map.colorSpace = THREE.SRGBColorSpace;
+              map.wrapS = THREE.RepeatWrapping;
+              map.wrapT = THREE.RepeatWrapping;
+              textures.set(spec.id, map);
+            }
+          }
           material = new THREE.MeshStandardMaterial({
-            color: block.color,
-            roughness: 0.38,
-            metalness: 0.06,
+            color: spec ? "#ffffff" : block.color,
+            map,
+            roughness: spec?.pattern === "metal" ? 0.28 : spec?.pattern === "water" ? 0.15 : 0.72,
+            metalness: spec?.pattern === "metal" ? 0.65 : 0.02,
           });
-          materials.set(block.color, material);
+          materials.set(key, material);
         }
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.set(block.x, block.y + 0.5, block.z);
@@ -143,6 +162,7 @@ export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }:
           y: data.y + Math.round(normal.y),
           z: data.z + Math.round(normal.z),
           color: colorRef.current,
+          ...(materialRef.current ? { material: materialRef.current } : {}),
         });
         return;
       }
@@ -152,6 +172,7 @@ export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }:
           y: 0,
           z: Math.round(picked.hitGround.point.z),
           color: colorRef.current,
+          ...(materialRef.current ? { material: materialRef.current } : {}),
         });
       }
     };
@@ -201,6 +222,7 @@ export function Viewport({ blocks, interactive, tool, color, onPlace, onErase }:
       ground.geometry.dispose();
       (ground.material as THREE.Material).dispose();
       for (const material of materials.values()) material.dispose();
+      for (const texture of textures.values()) texture.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };

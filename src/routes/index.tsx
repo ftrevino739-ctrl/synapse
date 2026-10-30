@@ -9,7 +9,7 @@ import { AuthScreen, BootScreen, ClaimScreen } from "@/components/synapse/auth-s
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>) => {
     const page = search.p;
-    const p: PageId = page === "inbox" || page === "chat" || page === "studio" ? page : "home";
+    const p: PageId = page === "inbox" || page === "chat" || page === "studio" || page === "account" ? page : "home";
     return { p };
   },
   component: Home,
